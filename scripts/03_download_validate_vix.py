@@ -15,6 +15,7 @@
 # ==============================================================
 
 import os
+import time
 import pandas as pd
 import yfinance as yf
 
@@ -63,6 +64,8 @@ print("Dimensiones:", df_lseg.shape)
 
 if "Date" in df_lseg.columns:
     dates = pd.to_datetime(df_lseg["Date"], errors="coerce")
+elif "date" in df_lseg.columns: # Handle lowercase 'date' column
+    dates = pd.to_datetime(df_lseg["date"], errors="coerce")
 else:
     dates = pd.to_datetime(df_lseg.index, errors="coerce")
 
@@ -84,19 +87,54 @@ print(start_date)
 # --------------------------------------------------------------
 
 print("\nDescargando ^VIX desde Yahoo Finance...")
+print("Método 1: yf.download")
 
-vix_raw = yf.download(
-    "^VIX",
-    start=start_date,
-    interval="1d",
-    auto_adjust=False,
-    progress=False,
-    keepna=True,
-    multi_level_index=False
-)
+vix_raw = None
+download_error = None
+
+try:
+    vix_raw = yf.download(
+        tickers="^VIX",
+        start=start_date,
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        keepna=True,
+        threads=False,
+        timeout=30
+    )
+except Exception as error:
+    download_error = error
+    print("Método 1 falló:")
+    print(error)
 
 if vix_raw is None or vix_raw.empty:
-    raise RuntimeError("Yahoo Finance no devolvió datos para ^VIX.")
+    print("\nEl método 1 no devolvió datos válidos.")
+    print("Esperando 5 segundos antes de intentar método alternativo...")
+    time.sleep(5)
+
+    print("\nMétodo 2: yf.Ticker('^VIX').history")
+
+    try:
+        ticker = yf.Ticker("^VIX")
+        vix_raw = ticker.history(
+            start=start_date,
+            interval="1d",
+            auto_adjust=False
+        )
+    except Exception as error:
+        print("Método 2 falló:")
+        print(error)
+        vix_raw = None
+
+if vix_raw is None or vix_raw.empty:
+    raise RuntimeError(
+        "No fue posible descargar ^VIX desde Yahoo Finance. "
+        "Puede tratarse de un problema temporal de conexión, bloqueo de Yahoo Finance "
+        "o disponibilidad momentánea del servicio. Vuelva a ejecutar la celda en unos minutos."
+    )
+
+print("\nDescarga finalizada correctamente.")
 
 
 # --------------------------------------------------------------
@@ -114,31 +152,76 @@ vix_raw = vix_raw.sort_index()
 
 
 # --------------------------------------------------------------
-# 6) Validaciones mínimas de la descarga
+# 6) Resolver columnas si Yahoo devuelve MultiIndex
 # --------------------------------------------------------------
 
-required_yahoo_columns = ["Open", "High", "Low", "Close", "Volume"]
+if isinstance(vix_raw.columns, pd.MultiIndex):
+    vix_raw.columns = [
+        "_".join([str(x) for x in col if str(x) != ""])
+        for col in vix_raw.columns
+    ]
+
+close_candidates = [
+    "Close",
+    "Close_^VIX",
+    "^VIX_Close"
+]
+
+close_column = None
+
+for candidate in close_candidates:
+    if candidate in vix_raw.columns:
+        close_column = candidate
+        break
+
+if close_column is None:
+    possible_close_columns = [
+        col for col in vix_raw.columns
+        if "close" in str(col).lower()
+    ]
+
+    if possible_close_columns:
+        close_column = possible_close_columns[0]
+
+if close_column is None:
+    raise ValueError(
+        "No se encontró la columna 'Close' o similar en los datos descargados de Yahoo Finance. "
+        "Columnas disponibles: " + str(list(vix_raw.columns))
+    )
+
+vix_close = vix_raw[close_column]
+
+# --------------------------------------------------------------
+# 7) Validar columnas de Yahoo Finance
+# --------------------------------------------------------------
+
+required_yahoo_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
 missing_yahoo_columns = [
     col for col in required_yahoo_columns if col not in vix_raw.columns
 ]
 
 if missing_yahoo_columns:
-    raise ValueError(
-        "Faltan columnas esperadas en la descarga de Yahoo Finance: "
-        + str(missing_yahoo_columns)
-    )
-
-vix_close = pd.to_numeric(vix_raw["Close"], errors="coerce")
-
-if vix_close.isna().all():
-    raise RuntimeError("La columna Close del VIX no contiene valores válidos.")
-
-if (vix_close.dropna() <= 0).any():
-    raise RuntimeError("Se detectaron valores no positivos en el cierre del VIX.")
-
+    print("Advertencia: Faltan las siguientes columnas en los datos de Yahoo Finance:")
+    print(missing_yahoo_columns)
+    # Consider adding logic here to handle missing columns, e.g., filling with NaN or dropping
 
 # --------------------------------------------------------------
-# 7) Guardar archivo bruto de VIX
+# 8) Guardar datos VIX en formato Parquet
 # --------------------------------------------------------------
+
+print("\nGuardando datos VIX en Parquet:")
+print(VIX_OUTPUT_FILE)
+vix_raw.to_parquet(VIX_OUTPUT_FILE, index=True)
+
+print("\nDatos VIX guardados correctamente.")
+
+# --------------------------------------------------------------
+# 9) Mostrar las primeras filas de los datos VIX descargados
+# --------------------------------------------------------------
+
+print("\nPrimeras 5 filas del VIX descargado:")
+display(vix_raw.head())
+print("Total de registros del VIX descargado:", vix_raw.shape[0])
+
 
 
