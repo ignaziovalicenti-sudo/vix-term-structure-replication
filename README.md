@@ -1,3 +1,10 @@
+# VIX Term Structure Replication
+
+Este repositorio contiene los scripts utilizados para construir la tabla maestra, generar gráficos, clasificar regímenes de volatilidad y estimar el modelo GARCH(1,1) del trabajo.
+
+## Estructura del repositorio
+
+```text
 vix-term-structure-replication/
 │
 ├── README.md
@@ -32,3 +39,14 @@ vix-term-structure-replication/
 │
 └── docs/
     └── notas_replicacion.md
+```
+
+## Organización metodológica
+
+Los scripts 01 a 04 corresponden al **Anexo I – Replicación de la construcción de la base de datos**.
+
+Los scripts 05 a 13 corresponden al **Anexo II – Evidencia visual de resultados, tablas y gráficos**.
+
+## Nota sobre datos licenciados
+
+Los datos provenientes de LSEG/Refinitiv pueden estar sujetos a restricciones de uso y redistribución. Por ese motivo, este repositorio publica los scripts necesarios para replicar el proceso, pero no necesariamente los archivos de datos brutos obtenidos desde la plataforma.
